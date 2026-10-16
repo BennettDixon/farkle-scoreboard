@@ -1,12 +1,12 @@
 > **Scope:** Proposed set of custom PCBs, the off-the-shelf modules they host, the board-to-board interconnect, the power architecture, the certification strategy (certified PSU + pre-certified radio), and the enclosure interface for the Farkle Scoreboard.
-> **Status:** **PROPOSAL** - Not yet agreed. Open questions in §11 must be answered by Guillermo before schematic capture starts. Builds on findings F1–F11 in `ELECTRONICS_CURRENT_STATE.md`.
+> **Status:** **PROPOSAL** - Not yet agreed. Open questions in §11 must be answered by Guillermo before schematic capture starts (Q1 answered 2026-10-16: personal build). Revised after the build-photo review (Session 2). Builds on findings F1–F11 in `ELECTRONICS_CURRENT_STATE.md`.
 
 # Modular PCB Architecture Proposal
 
 ## 0. TL;DR
 
-*   **Six custom boards from four unique designs:** `PWR` (USB-C power entry), `CORE` (compute carrier), `SEG` ×3 (identical score-display boards), and `PAD` (gamepad).
-*   **Buy, don't build:** the 8x8 LED grid, the 8-LED strip, the ST7789 LCD (a CS-capable module), the DFPlayer, and the compute module.
+*   **Three custom boards:** `PWR` (USB-C power entry), `CORE` (compute carrier), and `PAD` (gamepad). A custom `SEG` score-display board is **optional**, because the build already uses chainable 5-digit MAX7219 modules.
+*   **Buy, don't build:** the score-display modules (already in hand), the 8x8 LED grid, the 8-LED strip, the ST7789 LCD (a CS-capable module), the DFPlayer, and the compute module.
 *   **Phase A** keeps the Uno R4 WiFi and **today's pin map**, so firmware is unchanged. `CORE-A` is a shield the R4 plugs into.
 *   **Phase B** (optional) replaces it with `CORE-B`, which puts a pre-certified ESP32-S3 module directly on the board. Because the connectors are fixed, **every other board carries over unchanged**.
 *   **Certification boundary:** no mains, no battery, and no radio design inside the product. Power comes from a UL/CE-listed USB-C adapter (or a certified power bank). The only radio is a module with existing modular approvals.
@@ -30,7 +30,7 @@
 |:--|:--|:--|:--|:--|:--|:--|
 | **PWR** | Power entry | Custom | USB-C sink, TVS, eFuse (current limit + soft-start), power-switch input, power-good LED | 2 | ~35×25 mm | 1 |
 | **CORE-A** | Compute carrier (Phase A) | Custom | Uno R4 WiFi shield: rail distribution, 3V3 LDO, level translation, LCD clock gate, microSD socket, DFPlayer socket, LED data buffers, all peripheral connectors | 2 (4 optional) | Uno footprint, ~70×55 mm | 1 |
-| **SEG** | Score display | Custom | MAX7221 (or MAX7219) + 5× 7-segment digits, R_SET, decoupling, IN/OUT chain connectors | 2 | ~105×35 mm for 0.56" digits | **3** |
+| **SEG** | Score display | **Reuse modules** (custom optional) | MAX7221 (or MAX7219) + 5× 7-segment digits, R_SET, decoupling, IN/OUT chain connectors | 2 | ~105×35 mm for 0.56" digits | **3** |
 | **PAD** | Gamepad / control pad | Custom | 6 buttons, EC11 encoder + push, latching switch, steering diodes, ESD | 2 | Set by button layout | 1 |
 | GRID | 8x8 LED panel | **Buy** | WS2812B 8x8 panel (rigid PCB type) | – | 65×65 mm typ. | 1 |
 | STRIP | Status strip | **Buy** | 8× WS2812B stick | – | – | 1 |
@@ -77,7 +77,7 @@ graph LR
 ### 4.1 PWR: Power Entry
 *   **Connector:** USB-C receptacle, power-only (6-pin power-only types are fine in Phase A). **5.1 kΩ Rd on CC1 and CC2, each separate** (never shared).
 *   **Protection:** unidirectional 5V TVS on VBUS (e.g. SMBJ5.0A class) right at the connector.
-*   **eFuse:** an integrated eFuse (candidate: TI TPS2595 / TPS25947 family) set to **~2.9 A**. It provides:
+*   **eFuse:** an integrated eFuse (candidate: TI TPS2595 / TPS25947 family) set to **~2.5 A** for the current Xiaomi power bank (USB-A; banks of this class are typically rated 5.1 V/2.4 A, so check its label), or ~2.9 A with a 3 A USB-C adapter (one resistor change). It provides:
     *   Current limit (F2): a firmware bug can't trip the power bank or brown out the MCU.
     *   Soft-start (F7): the downstream bulk capacitance no longer slams the source.
     *   **EN pin driven by the panel power switch** (F9): the switch only carries µA, so a small illuminated or latching switch works.
@@ -102,6 +102,9 @@ The R4 plugs into CORE-A through standard Uno headers. CORE-A does all the elect
 | **Back-feed guard** | Verify the R4 WiFi USB/5V-pin power path from the Arduino schematic (F8). If it isn't isolated, add an ideal-diode (or Schottky) stage so the PC USB port and PWR can't back-feed each other while programming. | F8 |
 
 ### 4.3 SEG: Score Display (×3, identical)
+**Phase A: reuse what's built.** The build photo shows three off-the-shelf 5-digit MAX7219 modules that already have chain in/out headers. Mount them to the front panel and connect with J2 cables (PH-6 at CORE, 5-pin Dupont at the module; confirm the order on the module silkscreen). Build the custom SEG below only if the digit size or colour changes, or to get the MAX7221 benefits. *Note:* the digits look blue/white. Those LEDs need ~3 V forward voltage, which leaves the MAX7219 little headroom on a 5 V rail, so if brightness looks uneven between digits, that's the likely cause.
+
+**Custom SEG (optional):**
 *   **Driver:** prefer **MAX7221** over MAX7219. It's register-compatible (`ScoreDisplay` doesn't change). It has a **true SPI CS**, so it ignores LCD/SD traffic, and **slew-limited segment drivers**, which make EMC easier (§7.4). Note: many cheap MAX7219 boards use clone chips, so buy from an authorized distributor.
 *   **Digits:** 5× common-cathode 7-segment digits (0.56" or 0.8" per the enclosure). R_SET chosen for the brightness wanted at intensity 12/15, not maximum, which keeps current near the typical budget.
 *   **Decoupling:** 10µF electrolytic/ceramic + 100nF at V+ per chip, per the MAX7219/7221 datasheet layout guidance.
@@ -110,6 +113,7 @@ The R4 plugs into CORE-A through standard Uno headers. CORE-A does all the elect
 ### 4.4 PAD: Gamepad / Control Pad
 *   **Phase A (no firmware change):** keep the 3-bit bus, done properly on the PCB:
     *   **Steering diodes** (Schottky, e.g. BAT54 series; low Vf keeps a "pressed" line well below the MCU's V_IL) from each bus line to each button. Required diodes per button: CLEAR 1, FARKLE 1, BANK 1, +500 2, +100 2, +50 3, so **10 total**. (F4)
+    *   Today the encoder is a KY-040-style module and the latch is a self-locking switch module. PAD replaces them with a bare EC11 and a panel self-locking switch (or keeps headers for the modules).
     *   EC11 encoder with the 10 kΩ/10nF RC filtering recommended in encoder application notes; SELECT and LATCH direct.
     *   Mounting holes for panel mount *or* a handheld shell (open question Q3).
 *   **Chord aliasing (F5) can't be fixed by layout.** Options, decided with Guillermo:
@@ -151,7 +155,7 @@ Signal connectors are **JST-PH (2.0 mm, keyed, locking)**. High-current connecto
 
 ```mermaid
 graph TD
-    USB["USB-C source<br/>5V ≤3A (Type-C current)"] --> TVS["TVS"] --> EF["eFuse<br/>I_lim ≈2.9A, soft-start, EN"]
+    USB["USB-C source<br/>5V ≤3A (Type-C current)"] --> TVS["TVS"] --> EF["eFuse<br/>I_lim ≈2.5A, soft-start, EN"]
     SW["Panel switch"] -.-> EF
     EF --> STAR(("Star point<br/>on CORE"))
     STAR --> LED["5V_LED pour<br/>1000µF"] --> G["GRID"] & S["STRIP"]
@@ -160,16 +164,18 @@ graph TD
     SYS --> LDO["3V3 LDO"] --> L["LCD"] & SD["microSD"]
 ```
 
-**Budget rules, enforced in firmware:** the hardware limit is 2.9 A and the firmware design budget is **≤ 2.4 A**.
+**Budget rules, enforced in firmware:** the hardware limit is ~2.5 A (power-bank setting) and the firmware design budget is **≤ 2.0 A**.
 *   Cap the grid plus strip at an aggregate LED current using a global brightness ceiling (e.g. `setBrightness`) **derived from a documented per-pixel estimate**. This needs a firmware design note in `COMPONENT_LIBRARIES.md` (LedProgressGrid / FarkleWarningLights).
 *   Keep MAX7221 intensity at ≤12/15 (already the blink-high level).
-*   Optional (Phase B, needs a pin or ADC): PWR exposes CC voltage so firmware can tell a 1.5 A source from a 3 A source and dim accordingly.
+*   Optional (Phase B, needs a pin or ADC): PWR exposes CC voltage so firmware can tell a 1.5 A source from a 3 A source and dim accordingly. **This doesn't work with USB-A power banks:** an A-to-C cable always advertises default USB current, whatever the bank can actually deliver.
 
 ---
 
 ## 7. Certification Strategy
 
-> Assumption: "UE certified" in the brief means **UL (North-America safety) + CE (EU)**, with FCC as the US radio/EMC equivalent. Confirm (Q1).
+> Assumption: "UE certified" in the brief means **UL (North-America safety) + CE (EU)**, with FCC as the US radio/EMC equivalent.
+>
+> **Q1 answered (2026-10-16): personal build, not for sale.** §7.1 applies, so nothing below is mandatory. We still follow §7.2–7.4 as a design-for goal: a certified adapter and pre-certified radio cost little, they're good engineering anyway, and they keep a future sale possible.
 
 ### 7.1 If the scoreboard is never sold
 47 CFR §15.23 allows home-built devices in small quantities (not marketed) without FCC authorization, provided they don't cause interference. None of §7.2–7.4 is required, though the design still follows it so a later sale stays possible.
@@ -219,7 +225,7 @@ graph TD
 | Phase | Deliverable | Firmware impact | Gate to next phase |
 |:--|:--|:--|:--|
 | **A1** | PWR + CORE-A schematics and layout; order with the bought modules | None | Board bring-up: all existing tests pass and all subsystems are verified on hardware |
-| **A2** | SEG + PAD | None (MAX7221 is drop-in) | Full game played on PCBs only, no hand wiring |
+| **A2** | PAD (+ custom SEG only if wanted) | None (MAX7221 is drop-in) | Full game played on PCBs only, no hand wiring |
 | **A3** | Enclosure v1 around the A-boards | LED current-cap design note | Thermal and brightness OK; no LCD corruption over a full game |
 | **B** *(optional)* | CORE-B (ESP32-S3-WROOM-1) and/or PAD with I/O expander | Port to `esp32` platform; ControlPad reads expander | Decide based on Q2, Q5, and pin needs |
 | **C** *(volume only)* | Merge SEG ×3 + GRID + STRIP into one front-panel board | None | Front layout frozen |
@@ -245,7 +251,7 @@ One large front-panel PCB with all displays, LEDs, buttons, and the compute on t
 
 ## 11. Open Questions (for Guillermo)
 
-1.  **Q1, Goal:** personal build, a handful of gifts, or sale? And does "UE" mean UL + CE? This decides how much of §7 is mandatory.
+1.  ~~**Q1, Goal:**~~ **Answered:** personal build. Certification is a design-for goal, not a gate (§7). Still to confirm: does "UE" mean UL + CE?
 2.  **Q2, Compute:** happy to keep the Uno R4 WiFi long-term (Phase A only), or interested in Phase B?
 3.  **Q3, Gamepad form:** are the controls part of the scoreboard front panel, or a **tethered handheld pad** on a cable? (This changes J6's connector to a panel-mount locking type and adds cable ESD considerations.)
 4.  **Q4, Current wiring:** how are the multi-bit buttons isolated today, with diodes or multi-pole switches (F4)? And does the current LCD module really have no CS pin (F1)?

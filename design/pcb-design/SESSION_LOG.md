@@ -45,3 +45,27 @@
 1.  Walk Guillermo through the findings and answer Q1–Q9.
 2.  Freeze the §5 interconnect pinout.
 3.  Start KiCad schematics for PWR and CORE-A (create `hardware/kicad/`).
+
+---
+
+## Session 2: 2026-10-16, Build Photo Review
+
+**Participants:** Bennett Dixon, Claude. Input relayed from Guillermo: a photo of the working breadboard build, and the answer to Q1.
+
+**Answered:**
+*   **Q1:** personal build, not a sales project. Certification becomes a *design-for* goal rather than a gate (proposal §7). We keep the certified-adapter and pre-certified-radio rules because they're cheap and keep a sale possible later.
+
+**Learned from the photo (audit §7):**
+*   The score displays are **off-the-shelf chainable 5-digit MAX7219 modules**, so a custom SEG board is no longer needed for Phase A.
+*   Power is a **Xiaomi USB-A power bank** (typically rated 5.1 V/2.4 A). That is lower than the 3 A assumed in Session 1.
+*   Power and ground go through breadboard rails and Dupont jumpers (new finding **F12**), which reinforces F3.
+*   No mute switch, LED grid, or status strip is visible. F1 (LCD CS) and F4 (button diodes) can't be confirmed from the photo.
+
+**Changed in `MODULAR_PCB_PROPOSAL.md`:**
+*   Custom boards drop from four designs to **three: PWR, CORE-A, PAD**. SEG reuses the existing modules, and a custom SEG is optional.
+*   eFuse limit goes to **~2.5 A** for the power bank (2.9 A with a 3 A USB-C adapter). The firmware LED budget goes to **≤2.0 A**.
+*   Note added that CC-based source sensing can't work with USB-A banks.
+*   PAD notes the current KY-040 encoder and self-locking switch modules.
+
+**Still open:** Q2–Q9, especially Q3 (integrated vs tethered pad) and Q4 (LCD CS pin count, button diodes). A close-up photo of the LCD header and the underside of the button perfboard would answer Q4.
+

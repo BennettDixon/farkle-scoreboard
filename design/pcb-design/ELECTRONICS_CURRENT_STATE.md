@@ -1,5 +1,5 @@
 > **Scope:** Snapshot audit of the scoreboard electronics as they exist on `dev` (2026-10-16): what each subsystem is, how it is wired and powered, and the risks a PCB design has to fix. Input for `MODULAR_PCB_PROPOSAL.md`.
-> **Status:** **SNAPSHOT** - Reflects `dev` @ `7213802`. Not a source of truth for wiring; `SCHEMATIC_AND_HARDWARE_GUIDE.md` remains the live wiring spec until the PCBs replace hand wiring.
+> **Status:** **SNAPSHOT** - Reflects `dev` @ `7213802` plus a photo of the physical build (2026-10-16, §7). Not a source of truth for wiring; `SCHEMATIC_AND_HARDWARE_GUIDE.md` remains the live wiring spec until the PCBs replace hand wiring.
 
 # Electronics: Current State Audit
 
@@ -45,7 +45,7 @@ graph LR
 | Display | Part | Interface | Pins | Notes |
 |:--|:--|:--|:--|:--|
 | Text/UI screen | ST7789 240x240 IPS module | HW SPI (shared) | A4 CS, A5 DC, D7 RES, D8 BLK | Module has **no CS pin**, per `STEP_3_IMPLEMENTATION_PLAN.md` §3.2 |
-| Score displays | 3x MAX7219, daisy-chained, 3x 5-digit 7-seg (15 digits) | HW SPI (shared) | D10 LOAD/CS | `NUM_DEVICES 3` in `ScoreDisplay.h` |
+| Score displays | 3x off-the-shelf 5-digit MAX7219 modules, daisy-chained (15 digits) | HW SPI (shared) | D10 LOAD/CS | `NUM_DEVICES 3` in `ScoreDisplay.h`; modules confirmed by photo |
 | Progress grid | 8x8 WS2812 ("NeoPixel") panel | 1-wire | A0 | 64 px |
 | Status strip | 8x WS2812 | 1-wire | A1 | Farkle "danger map" |
 
@@ -68,7 +68,7 @@ DFPlayer Mini clone (MP3-TF-16P) on `Serial1` (D0/D1, 1 kΩ inline on the MCU TX
 ### 2.6 Power
 | Item | Current state |
 |:--|:--|
-| Source | USB-C power bank (10,000 mAh, ≥2.4A port recommended) via a USB-C breakout with 5.1 kΩ CC pull-downs |
+| Source | Xiaomi "Mi" power bank (photo) on a **USB-A** output. Banks of this class are typically rated 5.1 V/2.4 A, so check the label. Guide specifies a USB-C breakout with 5.1 kΩ CC pull-downs; with a USB-A source those resistors do nothing. |
 | Switching | Toggle switch in series with the **full** 5V load current |
 | MCU feed | 5V rail back-fed into the Uno R4 5V pin |
 | Filtering | 1000µF bulk at input; 0.1µF at LCD, MCU, and A2 (Issue #80) |
@@ -135,3 +135,27 @@ Severity: **H** = likely root cause of observed problems or a data/hardware-dama
 4. **The D12 MISO** connection to the SD card is missing from the guide's Mermaid diagram and pin map.
 5. **`AGENTS.md` build command** says `pio run -e esp32dev`, but `platformio.ini` only defines `uno_r4_wifi`.
 6. **The power budget** leaves out the status strip and doesn't distinguish typical from worst case (see §4).
+
+---
+
+## 7. Physical Build (photo review, 2026-10-16)
+
+Guillermo shared a photo of the working breadboard build. The photo isn't committed to the repo. It shows the LCD on the "Resume Game" screen and a score display reading 10000.
+
+| Area | What the photo shows | Effect on the docs |
+|:--|:--|:--|
+| Construction | Two breadboards plus a perfboard strip for the buttons, all inter-wired with ~20 cm Dupont jumpers. Power and ground are distributed through breadboard rails. | New finding **F12** |
+| Score displays | Three off-the-shelf 5-digit MAX7219 modules with in/out chain headers, jumpered in series. Digits look blue/white. | SEG can reuse these (proposal §4.3) |
+| Gamepad | Six 12 mm tactile switches with coloured caps (green, red, black, 3× white). A KY-040-style encoder module and a self-locking switch module with a white cap sit beside the displays. Small parts near the buttons *may* be steering diodes, but the photo can't confirm it. | F4 still open (Q4) |
+| Screen | ~1.3–1.5" ST7789 module, header along its top edge. Pin count isn't readable. | F1 still open (Q4) |
+| Audio / storage | DFPlayer with its blue busy LED lit, and a microSD module beside the LCD. 36 mm speaker on long jumper leads. **No mute switch is visible** in the speaker path. | Mute DPDT may not be built yet |
+| Power | Xiaomi power bank (USB-A out). Its cable leaves the frame, so its destination isn't visible. A separate red USB-C cable runs into the Uno R4. A large electrolytic (the 1000 µF bulk) is visible. | If the PC cable and the bank are connected together, **F8 applies** |
+| Not visible | No 8x8 grid and no status strip in frame. | Confirm they're wired, and how they're powered |
+
+### Additional findings
+
+| # | Sev | Subsystem | Finding | Why it matters |
+|:--|:--|:--|:--|:--|
+| F12 | **M** | Power / noise | LED and display current goes through breadboard rails and Dupont contacts. Each contact adds tens of mΩ and is typically rated around 1 A. | Voltage drop and ground bounce under LED load. This directly feeds F3 and the Issue #80 symptoms; a PCB with a solid ground plane removes it. |
+| F13 | **L** | Safety | A loose male jumper hangs off the build (red, so possibly 5V). | If it's live, it can short against the modules. Pull it or tape the end until the PCB replaces the wiring. |
+
