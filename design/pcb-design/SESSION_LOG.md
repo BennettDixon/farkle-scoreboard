@@ -69,3 +69,21 @@
 
 **Still open:** Q2–Q9, especially Q3 (integrated vs tethered pad) and Q4 (LCD CS pin count, button diodes). A close-up photo of the LCD header and the underside of the button perfboard would answer Q4.
 
+---
+
+## Session 3: 2026-10-16, Portable Power
+
+**Participants:** Bennett Dixon, Claude.
+
+**Context:** Guillermo likely isn't attached to the current power bank, but portability is probably a feature he wants. Bennett asked whether a pre-certified battery module could be specced in.
+
+**Proposed (`MODULAR_PCB_PROPOSAL.md` §6.1):**
+*   **Recommended:** a certified USB-C PD power bank (5 V/3 A, ≥10,000 mAh) **docked** in an enclosure bay and removable. It carries all battery certification itself, and we design no charger or cell circuitry.
+*   **Upgrade (PWR-2):** a second "wall" USB-C inlet with a priority power mux, so plugging in takes over without relying on the bank's pass-through charging. Many banks briefly drop their output during pass-through, which would reset the MCU.
+*   **Rejected:** certified cells with our own charger and boost (brings in battery-safety design), and bare 18650s or uncertified power-bank boards.
+*   Runtime is ~4 h typical on 10,000 mAh and ~8 h on 20,000 mAh.
+
+**Decided:** the build photo is **not** committed to the repo.
+
+**New open question:** Q10 (portability, and A vs B).
+

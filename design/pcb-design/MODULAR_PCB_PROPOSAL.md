@@ -9,7 +9,7 @@
 *   **Buy, don't build:** the score-display modules (already in hand), the 8x8 LED grid, the 8-LED strip, the ST7789 LCD (a CS-capable module), the DFPlayer, and the compute module.
 *   **Phase A** keeps the Uno R4 WiFi and **today's pin map**, so firmware is unchanged. `CORE-A` is a shield the R4 plugs into.
 *   **Phase B** (optional) replaces it with `CORE-B`, which puts a pre-certified ESP32-S3 module directly on the board. Because the connectors are fixed, **every other board carries over unchanged**.
-*   **Certification boundary:** no mains, no battery, and no radio design inside the product. Power comes from a UL/CE-listed USB-C adapter (or a certified power bank). The only radio is a module with existing modular approvals.
+*   **Certification boundary:** no mains, no battery design, and no radio design inside the product. Portability comes from a certified power bank docked in the enclosure (§6.1). Power comes from a UL/CE-listed USB-C adapter (or a certified power bank). The only radio is a module with existing modular approvals.
 
 ---
 
@@ -84,6 +84,7 @@ graph LR
     *   Keeping input power ≤15 W helps the product stay in the lowest power-source class under IEC 62368-1 (§7.3).
 *   **Bulk:** 100–220 µF after the eFuse. The large reservoir moves to CORE next to the LED connectors.
 *   **Output:** J1 (§5). Power-good LED.
+*   **Optional dual-input variant (PWR-2):** a bank inlet plus a wall inlet with a priority power mux. See §6.1 Option B.
 *   **Why a separate board:** the USB-C port has to sit at an enclosure wall the enclosure chooses. This keeps the ESD and hot-plug event at that wall, it's tiny and cheap, and it's the board most likely to change if the power source changes.
 
 ### 4.2 CORE-A: Compute Carrier (Uno R4 WiFi shield)
@@ -167,7 +168,40 @@ graph TD
 **Budget rules, enforced in firmware:** the hardware limit is ~2.5 A (power-bank setting) and the firmware design budget is **≤ 2.0 A**.
 *   Cap the grid plus strip at an aggregate LED current using a global brightness ceiling (e.g. `setBrightness`) **derived from a documented per-pixel estimate**. This needs a firmware design note in `COMPONENT_LIBRARIES.md` (LedProgressGrid / FarkleWarningLights).
 *   Keep MAX7221 intensity at ≤12/15 (already the blink-high level).
-*   Optional (Phase B, needs a pin or ADC): PWR exposes CC voltage so firmware can tell a 1.5 A source from a 3 A source and dim accordingly. **This doesn't work with USB-A power banks:** an A-to-C cable always advertises default USB current, whatever the bank can actually deliver.
+*   Optional (Phase B, needs a pin or ADC): PWR exposes CC voltage so firmware can tell a 1.5 A source from a 3 A source and dim accordingly. **This doesn't work with USB-A power banks:** an A-to-C cable always advertises default USB current, whatever the bank can actually deliver. (It works again with a USB-C PD bank on a C-to-C cable; see §6.1.)
+
+
+### 6.1 Portable Power Options
+
+Portability is a likely want (Q10). The rule from §1 still holds: **the battery must be a certified, self-contained product** (cells, protection, charger, and boost all inside one listed unit). We never design a charger or pick bare cells.
+
+| Option | What it is | Battery cert burden on us | Verdict |
+|:--|:--|:--|:--|
+| **A. Docked power bank** | A certified USB-C PD power bank sits in a bay inside (or clipped to) the enclosure. A short C-to-C cable runs to PWR. It comes out for charging and swaps for a fresh one. The same PWR inlet also takes a wall adapter. | **None.** The bank carries its own UL 2056 / IEC 62133-2 / UN38.3 / FCC / CE. | **Recommended** |
+| **B. Docked bank + wall input (PWR-2)** | Option A plus a second panel USB-C "wall" inlet. PWR-2 uses a priority power mux (candidate: TI TPS2121), so plugging into the wall takes over seamlessly and the bank sits idle. A panel-mount USB-C extension can route to the bank's charge input so it charges in place. | **None.** We switch between two certified sources and charge nothing ourselves. | Upgrade if "play while plugged in" matters. Avoids relying on the bank's pass-through charging, which on many banks briefly drops the output and would **reset the MCU mid-game**. |
+| C. Certified pack + our charger/boost | A UL 2054 / IEC 62133-2 pack (cells + protection only) with our own 1S charger and a 5 V/3 A boost on PWR. | **High.** Charger and boost design falls under IEC 62368-1 Annex M battery safety, and the boost needs ~4 A from the cell at low charge. | Not recommended. It breaks the §1 boundary. |
+| D. Bare 18650s / uncertified "power bank modules" | Loose cells in holders, or IP53xx-style power-bank boards from marketplaces. | Uncertified | **Rejected** (safety). |
+
+**Bank requirements for A/B:**
+*   A **USB-C PD** output that delivers **5 V/3 A** (any 20 W+ PD bank). Unlike the current USB-A bank, it advertises 3 A over CC, so the CC-sensing idea in §6 works again.
+*   **Certification marks:** UL 2056 (or IEC 62133-2 cells), UN38.3, FCC, and CE. Buy a major brand from a first-party store; marketplace listings are often counterfeit.
+*   **10,000 mAh or more.**
+*   A known low-current auto-off threshold. The scoreboard idles well above it today, but a future sleep mode could drop below it.
+
+**Runtime estimate** (assumes 3.7 V nominal and ~85 % conversion efficiency):
+
+| Bank | Usable energy | Typical play (~1.5 A, 7.5 W) | At firmware cap (2.0 A, 10 W) |
+|:--|:--|:--|:--|
+| 10,000 mAh | ~31 Wh | **~4 h** | ~3 h |
+| 20,000 mAh | ~63 Wh | **~8 h** | ~6 h |
+
+A Farkle game runs about 30–60 min, so a 10,000 mAh bank covers an evening. Keep the bank under 100 Wh (27,000 mAh) to stay inside airline carry-on limits.
+
+**Enclosure implications:**
+*   Design the bay around **one named bank model**, with foam or a strap for tolerance.
+*   Put the bank **away from the LED grid's heat**, with a vent.
+*   The bank's own charge LEDs are the only fuel gauge, because a 5 V regulated output carries no state-of-charge information. Add a light-pipe or window to them.
+*   Keep the bank **removable** so an aging or swollen Li-ion pack can be swapped without opening the electronics.
 
 ---
 
@@ -183,7 +217,7 @@ graph TD
 ### 7.2 Power: use a certified PSU, design none
 *   Ship with (or specify) a **USB-C wall adapter** that carries **UL/ETL listing to UL 62368-1, CE + UKCA marks, and DoE Level VI** efficiency. 5V/3A (15 W) or more. Any USB-PD adapter supplies 5V/3A without negotiation.
 *   Power banks: only branded units with their own UL 2056 / IEC 62133 certification.
-*   **No internal battery.** A lithium cell inside the product would bring UN38.3 (shipping), IEC 62133-2, and charger design into scope.
+*   **No battery design of our own.** Bare cells or our own charger would bring UN38.3 (shipping), IEC 62133-2, and charger design into scope. For portability, a **certified power bank docked in the enclosure** keeps all of that with the bank maker (§6.1).
 *   With only 5V DC inside, the product sits below the Low Voltage Directive range (75 V DC). Electrical-safety risk lives in the adapter, which is already certified.
 
 ### 7.3 Product safety (still ours)
@@ -260,6 +294,7 @@ One large front-panel PCB with all displays, LEDs, buttons, and the compute on t
 7.  **Q7, Sizes:** target enclosure dimensions, 7-segment digit height, and button type (arcade 24/30 mm vs tactile)?
 8.  **Q8, Fab:** hand-solder, or JLCPCB/PCBWay assembly? This decides package choices.
 9.  **Q9, Chord aliasing:** which option in §4.4 (accept / re-assign / expander)?
+10. **Q10, Portability:** should it run untethered? If so, a docked power bank (§6.1 A), or bank + wall auto-switch (§6.1 B)? Any preferred bank size or model to design the bay around?
 
 ---
 
