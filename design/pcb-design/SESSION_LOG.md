@@ -8,6 +8,7 @@
 |:--|:--|
 | `ELECTRONICS_CURRENT_STATE.md` | Snapshot audit of the hand-wired build: subsystems, pin/power budgets, findings F1–F11 |
 | `MODULAR_PCB_PROPOSAL.md` | Proposed board set, interconnect contract, power, certification, enclosure, phasing, open questions Q1–Q9 |
+| `VIBE_CODING_PCB_PITFALLS.md` | Recurring mistakes in AI-drafted PCB work, from Bennett's earlier boards; A0→A1 and A1→order checklists |
 | `SESSION_LOG.md` | This file |
 
 ---
@@ -86,4 +87,31 @@
 **Decided:** the build photo is **not** committed to the repo.
 
 **New open question:** Q10 (portability, and A vs B).
+
+---
+
+## Session 4: 2026-10-16, Design Review R1 and the Pitfalls Guide
+
+**Participants:** Bennett Dixon, Claude (as senior EE reviewer). Reviewed `MODULAR_PCB_PROPOSAL.md` as it stood after Session 3, against the RA4M1, 74AHCT/74LVC, TPS2595 and DFPlayer datasheets from memory (every number below is to be re-confirmed from the PDF at A0, per the pitfalls guide §2).
+
+**Checked and left alone:** the LCD level shift (74LVC245A at 3.3 V has 5 V-tolerant inputs); the SD MISO up-shift (74AHCT1G125 at 5 V reads a 3.3 V high, its active-low OE matches the active-low CS on D9); the LCD clock-gate fallback; MAX7221 as a register-compatible MAX7219 drop-in with `ScoreDisplay`'s CS-low/shift/CS-high sequence; the 6-pin power-only USB-C receptacle (VBUS×2, GND×2, CC1, CC2) with separate Rd; J6's reserved VPAD pin and the Phase B I2C reuse; the 3V3 LDO sizing for LCD + microSD; the power-bank options and runtime arithmetic.
+
+**Findings, all applied to the proposal:**
+
+| # | Sev | Finding | Fix |
+|:--|:--|:--|:--|
+| R1 | M | Steering diode count was 10. Single-bit buttons need none (their only shared node is GND); only the multi-bit buttons need one per line. | **7 diodes.** The mechanism is now explained in §4.4. |
+| R2 | M | The 5 V buffer needed 5 channels (MOSI, SCK, CS, A0, A1); a 74AHCT125 has 4. | One **74AHCT244** (8 ch). |
+| R3 | M | The J6 RC network's order was unspecified. With the pull-up on the MCU side of the series 1 kΩ, a pressed line sits at ≈0.73 V against the RA4M1's V_IL of 1.0 V. | Pull-up at the connector node, series R toward the MCU, cap at the MCU side. |
+| R4 | M | eFuse limit (2.5 A) sat *above* the 2.4 A bank's rating, so the bank's protection would trip first. | Limit ≈ source rating − 10 %: 2.2 A (bank), 2.7 A (3 A source). |
+| R5 | L | Inrush into ~1.3 mF wasn't tied to the soft-start setting. | dV/dt capacitor for a ≥ 6 ms rise (< 1 A). |
+| R6 | M | Current limiting doesn't stop a mid-write power loss corrupting the SD journal. | Firmware note: CRC per journal record, drop a torn last record; eFuse fault pin in Phase B. |
+| R7 | M | The BOM was listed as a repo addition "once agreed", i.e. after layout. The part sets the footprint. | New **Phase A0** (BOM from the fab's catalog before schematic capture), principle 7, `bom.csv` beside each KiCad project, a review doc per revision. |
+| R8 | L | A4/A5 double as `Wire` SDA/SCL on the R4; F8 had no concrete test. | Firmware guard noted; DMM diode-mode check for the USB/5 V path. |
+| R9 | L | J8's EN line had no defined polarity, pull or protection. | Pull-down, switch to a pull-up, RC + TVS; a shorted cable turns the unit *on* (harmless). |
+| R10 | M | DFPlayer TX (3.3 V) into the RA4M1 RX is below the CMOS V_IH of 4.0 V, and the bare 1 kΩ on the TX line relies on the module's clamp. | TX through a '244 channel; a 1k/2k divider on the RX line. |
+
+**New document:** `VIBE_CODING_PCB_PITFALLS.md`, 13 pitfalls from Bennett's sensor/control boards (v1.0 → v1.4: pitch change, USB-C change, hole relocation after layout) and the 24 V power board (v0 → v0.6, three reviews in two days; fab export with no part numbers; a reset that rebooted the host, which the bring-up test would have passed; a generator that orphaned every routed footprint). Its two checklists gate A0 → A1 and A1 → order in the proposal's §9.
+
+**Still open:** Q2–Q10. **Q8 (fab) now gates A0**, because the BOM is chosen from that fab's catalog.
 

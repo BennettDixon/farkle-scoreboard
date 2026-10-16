@@ -1,5 +1,5 @@
 > **Scope:** Proposed set of custom PCBs, the off-the-shelf modules they host, the board-to-board interconnect, the power architecture, the certification strategy (certified PSU + pre-certified radio), and the enclosure interface for the Farkle Scoreboard.
-> **Status:** **PROPOSAL** - Not yet agreed. Open questions in §11 must be answered by Guillermo before schematic capture starts (Q1 answered 2026-10-16: personal build). Revised after the build-photo review (Session 2). Builds on findings F1–F11 in `ELECTRONICS_CURRENT_STATE.md`.
+> **Status:** **PROPOSAL** - Not yet agreed. Open questions in §11 must be answered by Guillermo before schematic capture starts (Q1 answered 2026-10-16: personal build). Revised after the build-photo review (Session 2) and the first design review (Session 4, R1–R10 applied). Builds on findings F1–F13 in `ELECTRONICS_CURRENT_STATE.md`. Workflow rules in `VIBE_CODING_PCB_PITFALLS.md`.
 
 # Modular PCB Architecture Proposal
 
@@ -21,6 +21,7 @@
 4.  **Repeat, don't vary.** The three score displays are one PCB design built three times and daisy-chained.
 5.  **Separate the high-current LED path from logic** on every board: dedicated pours and a star point at the power input (fixes F3).
 6.  **Hand-solderable or JLCPCB-assemblable.** 2-layer where possible, 0603/0805 passives, SOIC/SOT packages, no BGAs.
+7.  **BOM before layout.** Every part is chosen from the fab's catalog (LCSC code, package, stock) before schematic capture, because the part sets the footprint. See `VIBE_CODING_PCB_PITFALLS.md` §1 and the A0 gate in §9.
 
 ---
 
@@ -77,10 +78,10 @@ graph LR
 ### 4.1 PWR: Power Entry
 *   **Connector:** USB-C receptacle, power-only (6-pin power-only types are fine in Phase A). **5.1 kΩ Rd on CC1 and CC2, each separate** (never shared).
 *   **Protection:** unidirectional 5V TVS on VBUS (e.g. SMBJ5.0A class) right at the connector.
-*   **eFuse:** an integrated eFuse (candidate: TI TPS2595 / TPS25947 family) set to **~2.5 A** for the current Xiaomi power bank (USB-A; banks of this class are typically rated 5.1 V/2.4 A, so check its label), or ~2.9 A with a 3 A USB-C adapter (one resistor change). It provides:
+*   **eFuse:** an integrated eFuse (candidate: TI TPS2595 / TPS25947 family) set **below the source's rating, not at it** (R4): ~2.2 A for the current Xiaomi USB-A bank (banks of this class are typically rated 5.1 V/2.4 A, so check its label), ~2.7 A for a 3 A USB-C adapter or PD bank. One resistor change. If the limit sat *above* the source's rating, the bank's own protection would trip first and the eFuse would never do its job. It provides:
     *   Current limit (F2): a firmware bug can't trip the power bank or brown out the MCU.
-    *   Soft-start (F7): the downstream bulk capacitance no longer slams the source.
-    *   **EN pin driven by the panel power switch** (F9): the switch only carries µA, so a small illuminated or latching switch works.
+    *   Soft-start (F7): the downstream bulk capacitance no longer slams the source. Size the dV/dt capacitor so the ~1.3 mF downstream (PWR bulk + CORE's 1000 µF) charges at under ~1 A: a rise of ≥ 6 ms (R5).
+    *   **EN pin driven by the panel power switch** (F9): the switch only carries µA, so a small illuminated or latching switch works. On PWR: EN pulled **down** with 100 kΩ (off by default), the switch closes EN to a 10 kΩ pull-up from VBUS, with 1 kΩ series + 10 nF at the EN pin and a TVS on the J8 line (R9). A short across J8 turns the unit on, which is the harmless failure.
     *   Keeping input power ≤15 W helps the product stay in the lowest power-source class under IEC 62368-1 (§7.3).
 *   **Bulk:** 100–220 µF after the eFuse. The large reservoir moves to CORE next to the LED connectors.
 *   **Output:** J1 (§5). Power-good LED.
@@ -96,11 +97,11 @@ The R4 plugs into CORE-A through standard Uno headers. CORE-A does all the elect
 | **3V3 rail** | Own LDO (e.g. AP2112K-3.3, 600mA) from 5V_SYS for LCD + microSD. Doesn't rely on the R4's 3V3 pin budget. | F6 |
 | **LCD level shift + CS** | 74LVC245A powered at 3.3V (5V-tolerant inputs) translates SCK, MOSI, CS (A4), DC (A5), RES (D7), BLK (D8) down to 3.3V. With a **CS-capable LCD**, A4 drives CS directly. If the chosen LCD has *no* CS, a 74LVC1G125 gates the LCD's SCK using A4 as enable (DNP option), so it only sees its own traffic. | F1, F6 |
 | **microSD** | Socket on CORE at a board edge (aligned to an enclosure slot if users swap cards). Down-shift via 74LVC125A @3.3V. **MISO up-shift + tri-state** via 74AHCT1G125 @5V, enabled by SD CS (D9), which also stops the card holding MISO when deselected. Replaces the 5V SD breakout. | Robust shared bus |
-| **SEG bus buffer** | 74AHCT125 @5V buffers MOSI/SCK/CS(D10) toward J2, with 33Ω series resistors to drive a short cable. TTL thresholds mean it accepts 3.3V input in Phase B unchanged. | Phase-B ready |
-| **LED data** | Remaining 74AHCT125 channels buffer A0 → J4 and A1 → J5, with 330Ω series at the connector. | F10 |
-| **Gamepad input** | J6 lines get 10 kΩ external pull-ups to 5V, 1 kΩ series + 10nF RC, and two 4-channel TVS arrays at the connector (e.g. TPD4E05U06). | Noise, ESD |
-| **Audio** | DFPlayer in a socket; 1 kΩ on TX→RX kept from today's design; BTL outputs to J7. | – |
-| **Back-feed guard** | Verify the R4 WiFi USB/5V-pin power path from the Arduino schematic (F8). If it isn't isolated, add an ideal-diode (or Schottky) stage so the PC USB port and PWR can't back-feed each other while programming. | F8 |
+| **5V bus buffer** | One **74AHCT244** (8 channels, TTL-threshold inputs) @5V: MOSI/SCK/CS(D10) → J2 with 33 Ω series; A0 → J4 and A1 → J5 with 330 Ω series at the connector; **DFPlayer TX → D0** so the 3.3 V UART reply is a clean 5 V at the RA4M1 (whose CMOS V_IH is 0.8×VCC = 4.0 V; a bare 3.3 V signal is below spec). Six of eight channels used; two spare. TTL thresholds mean the same part accepts 3.3 V input in Phase B unchanged. (R2, R10) | F10, Phase-B ready |
+| **Gamepad input** | Per J6 line, in this order from the connector inward: TVS to GND at the connector pin (two 4-channel arrays, e.g. TPD4E05U06), **10 kΩ pull-up to 5V at the connector node**, then **1 kΩ series toward the MCU pin**, then **10 nF to GND at the MCU side**. The order matters (R3): with the pull-up on the MCU side of the series resistor, a pressed line only reaches ≈0.73 V (Schottky Vf + the 1k/10k divider) against the RA4M1's V_IL of 1.0 V; with it at the connector node the pressed line sits at the diode's 0.3 V. | Noise, ESD |
+| **Audio** | DFPlayer in a socket. R4 TX (D1) → DFPlayer RX through a **1 kΩ / 2 kΩ divider to 3.3 V** instead of the bare 1 kΩ series resistor, which relies on the module's input clamp (R10). DFPlayer TX → D0 via the '244 above. BTL outputs to J7. | – |
+| **Back-feed guard** | Verify the R4 WiFi USB/5V-pin power path from the Arduino schematic (F8). Bench check: with the R4 unpowered, DMM in diode mode between the USB VBUS pin and the 5V header pin; a drop one way and open the other means a series diode and the PC port is safe. If it reads near 0 Ω, add an ideal-diode (or Schottky) stage on CORE so the PC USB port and PWR can't back-feed each other while programming. | F8 |
+| **A4/A5 caveat** | A4/A5 are also `Wire`'s SDA/SCL on the Uno R4. Any library that calls `Wire.begin()` (RTC, sensor, the Qwiic port is on `Wire1`, so it's safe) hijacks LCD CS/DC. Guard in firmware: no `Wire` on Phase A hardware (R8). | – |
 
 ### 4.3 SEG: Score Display (×3, identical)
 **Phase A: reuse what's built.** The build photo shows three off-the-shelf 5-digit MAX7219 modules that already have chain in/out headers. Mount them to the front panel and connect with J2 cables (PH-6 at CORE, 5-pin Dupont at the module; confirm the order on the module silkscreen). Build the custom SEG below only if the digit size or colour changes, or to get the MAX7221 benefits. *Note:* the digits look blue/white. Those LEDs need ~3 V forward voltage, which leaves the MAX7219 little headroom on a 5 V rail, so if brightness looks uneven between digits, that's the likely cause.
@@ -113,7 +114,7 @@ The R4 plugs into CORE-A through standard Uno headers. CORE-A does all the elect
 
 ### 4.4 PAD: Gamepad / Control Pad
 *   **Phase A (no firmware change):** keep the 3-bit bus, done properly on the PCB:
-    *   **Steering diodes** (Schottky, e.g. BAT54 series; low Vf keeps a "pressed" line well below the MCU's V_IL) from each bus line to each button. Required diodes per button: CLEAR 1, FARKLE 1, BANK 1, +500 2, +100 2, +50 3, so **10 total**. (F4)
+    *   **Steering diodes** (Schottky, e.g. BAT54 series; low Vf keeps a "pressed" line well below the MCU's V_IL), one per bus line on each **multi-bit** button only: +500 2, +100 2, +50 3, so **7 total** (R1, corrects the 10 in Session 1). Single-bit buttons need none: their only shared node is GND. The diodes exist because a multi-bit button's common node ties its lines together while the switch is *open*; without them, pressing CLEAR (bit 0) pulls bits 1 and 2 low through the +50 button's common node and reads 111 = +50. (F4)
     *   Today the encoder is a KY-040-style module and the latch is a self-locking switch module. PAD replaces them with a bare EC11 and a panel self-locking switch (or keeps headers for the modules).
     *   EC11 encoder with the 10 kΩ/10nF RC filtering recommended in encoder application notes; SELECT and LATCH direct.
     *   Mounting holes for panel mount *or* a handheld shell (open question Q3).
@@ -168,6 +169,7 @@ graph TD
 **Budget rules, enforced in firmware:** the hardware limit is ~2.5 A (power-bank setting) and the firmware design budget is **≤ 2.0 A**.
 *   Cap the grid plus strip at an aggregate LED current using a global brightness ceiling (e.g. `setBrightness`) **derived from a documented per-pixel estimate**. This needs a firmware design note in `COMPONENT_LIBRARIES.md` (LedProgressGrid / FarkleWarningLights).
 *   Keep MAX7221 intensity at ≤12/15 (already the blink-high level).
+*   **Journal integrity under brown-out (R6):** the hardware limits the current, but a power-bank auto-off or a yanked cable still cuts power mid-write. `MemoryCard`'s fixed-width journal records should each carry a CRC (or a sequence + checksum byte), and recovery should drop a torn last record rather than trust it. Firmware design note for `MEMORY_FILE_TREE.md`. In Phase B the eFuse's fault/PG output goes to a pin for a power-fail warning; Phase A has no pin free.
 *   Optional (Phase B, needs a pin or ADC): PWR exposes CC voltage so firmware can tell a 1.5 A source from a 3 A source and dim accordingly. **This doesn't work with USB-A power banks:** an A-to-C cable always advertises default USB current, whatever the bank can actually deliver. (It works again with a USB-C PD bank on a C-to-C cable; see §6.1.)
 
 
@@ -258,7 +260,8 @@ A Farkle game runs about 30–60 min, so a 10,000 mAh bank covers an evening. Ke
 
 | Phase | Deliverable | Firmware impact | Gate to next phase |
 |:--|:--|:--|:--|
-| **A1** | PWR + CORE-A schematics and layout; order with the bought modules | None | Board bring-up: all existing tests pass and all subsystems are verified on hardware |
+| **A0** | Fab chosen; **every BOM line selected from the fab's catalog** (LCSC, package, stock); footprint library built from those parts; enclosure hands over outlines, holes, connector edges and max heights | None | `VIBE_CODING_PCB_PITFALLS.md` checklist "A0 → A1" complete |
+| **A1** | PWR + CORE-A schematics and layout; review doc per revision; order with the bought modules | None | Checklist "A1 → order" complete; board bring-up: all existing tests pass and all subsystems are verified on hardware |
 | **A2** | PAD (+ custom SEG only if wanted) | None (MAX7221 is drop-in) | Full game played on PCBs only, no hand wiring |
 | **A3** | Enclosure v1 around the A-boards | LED current-cap design note | Thermal and brightness OK; no LCD corruption over a full game |
 | **B** *(optional)* | CORE-B (ESP32-S3-WROOM-1) and/or PAD with I/O expander | Port to `esp32` platform; ControlPad reads expander | Decide based on Q2, Q5, and pin needs |
@@ -300,7 +303,8 @@ One large front-panel PCB with all displays, LEDs, buttons, and the compute on t
 
 ## 12. Proposed Repo Additions (once agreed)
 
-*   `hardware/kicad/<board>/`: one KiCad project per board (PWR, CORE-A, SEG, PAD) with shared symbol/footprint library `hardware/kicad/lib/`.
-*   `hardware/bom/`: per-board BOM with LCSC/DigiKey part numbers.
+*   `hardware/kicad/<board>/`: one KiCad project per board (PWR, CORE-A, PAD; SEG if built) with shared symbol/footprint library `hardware/kicad/lib/` **built from the selected parts**.
+*   `hardware/kicad/<board>/bom.csv`: the fab-ready BOM (Ref, Value, Package, MPN, LCSC, Basic/Extended, stock at selection, datasheet URL). **Written in A0, before the schematic**, and the export tool refuses a line without an LCSC code.
+*   `hardware/kicad/<board>/REVIEW_v0.x.md`: one review doc per revision, with "checked and left alone" as well as findings.
 *   `hardware/enclosure/`: CAD source + STLs.
 *   `design/pcb-design/`: this folder stays the live spec. `SCHEMATIC_AND_HARDWARE_GUIDE.md` becomes "harness and connector guide" once hand wiring is retired.
